@@ -1,0 +1,111 @@
+name: Document Bicep Module
+description: Creates default markdown README.md documentation for the specified module and commits it to the repository.
+
+inputs:
+  root-path:
+    description: The root path for the modules.
+    required: true
+
+  module-name:
+    description: "The name of the module. This should include the full relative path below the root-path, not including any leading or trailing '/'. Example: 'subnet' or 'modules/subnet'."
+    required: true
+
+  as-pull-request:
+    description: Setting this parameter to 'true' will create a pull request instead of committing directly to the default branch.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Normalize module path
+      id: normalize-params
+      shell: pwsh
+      env:
+        rootPath: ${{ inputs.root-path }}
+        moduleName: ${{ inputs.module-name }}
+      run: |
+        #* Normalize module name
+        $rootPath = $env:rootPath.Trim("/")
+        $moduleName = $env:moduleName.ToLower().Trim("/")
+        $moduleDir = Join-Path $rootPath $moduleName
+
+        #* Write outputs
+        Write-Output "root-path=$rootPath" >> $env:GITHUB_OUTPUT
+        Write-Output "module-name=$moduleName" >> $env:GITHUB_OUTPUT
+        Write-Output "module-dir=$moduleDir" >> $env:GITHUB_OUTPUT
+
+    - name: Install PS Modules
+      uses: climpr/install-psmodules@v0
+      with:
+        modules: |
+          Az.Accounts:3.0.0
+          Az.Resources:7.1.0
+          PSDocs.Azure:0.3.0
+
+    - name: Bicep Build
+      uses: Azure/bicep-build-action@v1.0.1
+      with:
+        bicepFilePath: ${{ steps.normalize-params.outputs.module-dir }}/main.bicep
+        outputFilePath: ${{ steps.normalize-params.outputs.module-dir }}/main.json
+
+    - name: Write README
+      shell: pwsh
+      env:
+        moduleDir: ${{ steps.normalize-params.outputs.module-dir }}
+      run: |
+        #* Write README
+
+        Get-AzDocTemplateFile -Path $env:moduleDir/main.json | ForEach-Object {
+          $template = Get-Item -Path $_.TemplateFile
+          
+          $options = @{
+            'Configuration.AZURE_USE_PARAMETER_FILE_SNIPPET' = $true
+            'Configuration.SAMPLE_USE_PARAMETERS_SNIPPET'    = $true
+            'Configuration.AZURE_USE_COMMAND_LINE_SNIPPET'   = $true
+            'Output.Culture'                                 = "en-US"
+          }
+
+          Invoke-PSDocument -Module PSDocs.Azure -InputObject $template.FullName -OutputPath $env:moduleDir -InstanceName "README" -Option $options
+          git add $env:moduleDir/README.md
+        }
+
+    - name: Set Git config
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        $repoName = gh repo view --json name -q ".name"
+        git config --global user.name "$repoName[bot]"
+        git config --global user.email "$repoName[bot]@users.noreply.github.com"
+
+    - name: Push changes
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        moduleName: ${{ matrix.module-name }}
+        asPullRequest: ${{ inputs.as-pull-request == 'true' }}
+      run: |
+        git pull -q # sync with possible changes that may have happened in the between
+        if (git diff --name-only --cached) {
+          if ([bool]::Parse($env:asPullRequest)) {
+            $branchName = "docs/$($env:moduleName)"
+            git checkout -b $branchName
+            git commit -am "[Automated changes] Generate-Documentation for $($env:moduleName)"
+            git push --set-upstream origin $branchName --force
+
+            if (gh pr list --head $branchName) {
+              Write-Host "Pull request already created."
+            }
+            else {
+              gh pr create --fill
+            }
+          }
+          else {
+            git commit -am "[Automated changes] Generate-Documentation for $($env:moduleName)"
+            git push
+          }
+        }
+        else {
+          Write-Host "No changes detected."
+        }
