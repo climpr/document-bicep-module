@@ -36,7 +36,7 @@ runs:
         Write-Output "module-dir=$moduleDir" >> $env:GITHUB_OUTPUT
 
     - name: Install PS Modules
-      uses: climpr/install-psmodules@v0
+      uses: climpr/install-psmodules@v1
       with:
         modules: |
           Az.Accounts:3.0.0
