@@ -8,7 +8,7 @@ This action is used by calling it in a step as follows:
 
 ```yaml
 - name: Write module documentation
-  uses: climpr/document-bicep-module@v0
+  uses: climpr/document-bicep-module@v1
   with:
     root-path: bicep-modules
     module-name: name of module
@@ -93,7 +93,7 @@ jobs:
 
       - name: Get Bicep modules
         id: get-module-names
-        uses: climpr/get-bicep-modules@v0
+        uses: climpr/get-bicep-modules@v1
         with:
           root-path: ${{ env.root-path }}
           module-name: ${{ inputs.module-name }}
@@ -129,7 +129,7 @@ jobs:
           subscription-id: ${{ vars.SUBSCRIPTION_ID }}
 
       - name: Write module documentation
-        uses: climpr/document-bicep-module@v0
+        uses: climpr/document-bicep-module@v1
         with:
           root-path: ${{ env.root-path }}
           module-name: ${{ matrix.module-name }}
